@@ -1,8 +1,8 @@
 # GODstatic Immersive Game — Preview Package
 
-This repository packages the fixed, standalone GODstatic game prototype for an **isolated Cloudflare Pages preview project**. It includes the static game, automated clean/returning-player browser tests, a local Wrangler Pages check, Lighthouse CI, a Git pre-push hook, and a GitHub Actions workflow.
+This repository packages the fixed, standalone GODstatic game prototype for an **isolated Cloudflare Pages preview project**. It includes the static game, automated clean/returning-player browser tests, a local Wrangler Pages check, Lighthouse CI, a Git pre-push hook, and a GitHub Actions workflow with a post-deployment Cloudflare Access service-token smoke test.
 
-The GitHub workflow runs browser tests and Lighthouse on pull requests and on pushes to `main` or `preview`. A push to the `preview` branch deploys to Cloudflare Pages **only after validation passes**. It never deploys this game to the existing GODstatic production site. Keep the Pages project name `godstatic-game-preview` separate from any live-site project.
+The GitHub workflow runs browser tests and Lighthouse on pull requests targeting `main` or `preview`, and on **every push** to either branch. Every push to `preview` deploys to Cloudflare Pages **only after validation passes**. Pushes to `main` validate but do not deploy. It never deploys this game to the existing GODstatic production site. Keep the Pages project name `godstatic-game-preview` separate from any live-site project.
 
 ## Included project layout
 
@@ -32,7 +32,7 @@ Install [Node.js](https://nodejs.org/) 22 or later and Git. From this repository
 
 ```bash
 npm ci
-npx playwright install chromium
+npx playwright-core install chromium
 ```
 
 Authenticate Wrangler locally, then create the separate Pages project once:
@@ -78,7 +78,7 @@ npm run hooks:install
 
 The hook calls `npm run validate`. If validation fails, Git refuses the push. You can still run `npm run validate` yourself at any time.
 
-Lighthouse begins with warning-only thresholds so normal score variability does not block initial work. It audits the mobile profile three times and checks median Performance score, Largest Contentful Paint (LCP), and Cumulative Layout Shift (CLS). Local reports are written to `.lighthouseci/`, which is ignored by Git. On GitHub, reports are uploaded as a workflow artifact for 14 days. Once a stable baseline exists, edit `lighthouserc.js` and change selected assertion levels from `warn` to `error` to enforce them.
+Lighthouse audits the mobile profile three times and enforces median budgets: Performance score at least `0.85`, Largest Contentful Paint (LCP) no more than `3000` ms, and Cumulative Layout Shift (CLS) no more than `0.1`. These assertions use the `error` level, so exceeding a budget fails validation and prevents a preview deployment. Local reports are written to `.lighthouseci/`, which is ignored by Git. On GitHub, reports are uploaded as a workflow artifact for 14 days. Tune the thresholds in `lighthouserc.js` if your measured baseline requires different budgets.
 
 ## 3. Put the project on GitHub
 
@@ -101,7 +101,7 @@ git switch -c preview
 git push -u origin preview
 ```
 
-After GitHub secrets are set up (next section), a passing push to `preview` triggers the isolated Pages preview deployment. Pull requests targeting `main` or `preview` run validation but do not deploy. A push to `main` validates only.
+After GitHub secrets are set up (next section), every push to `preview` triggers the isolated Pages deployment after validation passes. A final job verifies anonymous requests are blocked and that a Cloudflare Access service token can retrieve the deployed game HTML. Pull requests targeting `main` or `preview` run validation but do not deploy. Pushes to `main` validate only.
 
 ## 4. Add Cloudflare secrets to GitHub
 
@@ -109,8 +109,12 @@ Create a Cloudflare API token limited to **Account → Cloudflare Pages → Edit
 
 - `CLOUDFLARE_API_TOKEN` — the scoped API token.
 - `CLOUDFLARE_ACCOUNT_ID` — the Cloudflare account ID.
+- `CF_ACCESS_CLIENT_ID` — the Client ID for a Cloudflare Access service token.
+- `CF_ACCESS_CLIENT_SECRET` — the matching service-token secret.
 
-Do not put credentials in this repository, README, workflow, or `.env` file. GitHub Actions reads them only during the protected preview-deploy job. A pull request does not receive a Cloudflare deployment job.
+To create the Access credentials, go to **Zero Trust → Access controls → Service credentials → Service Tokens → Create Service Token**. Then, in the Access application for `game-preview.godstatic.com`, add a **Service Auth** policy that includes this service token. Store its Client ID and Secret as the two GitHub secrets above. The workflow uses them only in the post-deployment smoke-test job, which runs on pushes to `preview`, not on pull requests.
+
+Do not put credentials in this repository, README, workflow, or `.env` file. GitHub Actions reads the Pages API token and account ID only during the preview-deploy job, and the Access service-token credentials only during the protected-preview test. A pull request does not receive either deployment or service-token testing jobs.
 
 Cloudflare's current Direct Upload guide documents these secrets and `wrangler pages deploy`; the official action is [`cloudflare/wrangler-action@v4`](https://github.com/cloudflare/wrangler-action).
 
