@@ -10,11 +10,10 @@ module.exports = {
     },
     assert: {
       assertions: {
-        // Begin as warnings so the first few runs establish a real local baseline.
-        // Promote selected levels from "warn" to "error" once the scores are stable.
-        'categories:performance': ['warn', { minScore: 0.85, aggregationMethod: 'median' }],
-        'largest-contentful-paint': ['warn', { maxNumericValue: 3000, aggregationMethod: 'median' }],
-        'cumulative-layout-shift': ['warn', { maxNumericValue: 0.1, aggregationMethod: 'median' }],
+        // Blocking budgets use the median of three mobile-profile Lighthouse runs.
+        'categories:performance': ['error', { minScore: 0.85, aggregationMethod: 'median' }],
+        'largest-contentful-paint': ['error', { maxNumericValue: 3000, aggregationMethod: 'median' }],
+        'cumulative-layout-shift': ['error', { maxNumericValue: 0.1, aggregationMethod: 'median' }],
       },
     },
     upload: {
