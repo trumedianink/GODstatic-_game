@@ -1,0 +1,16 @@
+# Dependencies
+node_modules/
+
+# Local Lighthouse reports
+.lighthouseci/
+
+# Wrangler local state and logs
+.wrangler/
+.dev.vars
+.env
+.env.*
+!.env.example
+
+# OS/editor noise
+.DS_Store
+Thumbs.db

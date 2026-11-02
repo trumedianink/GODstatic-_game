@@ -1,0 +1,6 @@
+#!/usr/bin/env sh
+set -eu
+ROOT="$(git rev-parse --show-toplevel)"
+cd "$ROOT"
+echo "Running GODstatic pre-push validation (Wrangler + browser + Lighthouse)..."
+npm run validate

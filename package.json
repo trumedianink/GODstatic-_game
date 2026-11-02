@@ -1,0 +1,22 @@
+{
+  "name": "godstatic-game-preview",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Isolated GODstatic immersive game preview with browser regression and Lighthouse CI checks.",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "dev": "wrangler pages dev ./public --ip 127.0.0.1",
+    "preview": "bash ./scripts/preview_local.sh",
+    "preview:check": "bash ./scripts/preview_local.sh --check",
+    "validate": "bash ./scripts/prepush_pages_dev_check.sh ./public",
+    "hooks:install": "git config core.hooksPath .githooks",
+    "pages:preview": "wrangler pages deploy ./public --project-name=godstatic-game-preview --branch=preview"
+  },
+  "devDependencies": {
+    "@lhci/cli": "0.15.1",
+    "playwright-core": "1.64.1",
+    "wrangler": "4.156.0"
+  }
+}
