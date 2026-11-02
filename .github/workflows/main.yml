@@ -1,0 +1,120 @@
+name: Validate and deploy preview
+
+on:
+  pull_request:
+    branches: [main, preview]
+  push:
+    branches: [main, preview]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    name: Browser tests and Lighthouse
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v6
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Chromium for browser tests and Lighthouse
+        run: npx playwright-core install --with-deps chromium
+
+      - name: Run pre-push validation
+        run: npm run validate
+
+      - name: Save Lighthouse reports
+        if: always() && hashFiles('.lighthouseci/**') != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: lighthouse-reports-${{ github.run_number }}
+          path: .lighthouseci/
+          if-no-files-found: warn
+          retention-days: 14
+
+  deploy-preview:
+    name: Deploy Cloudflare Pages preview
+    needs: validate
+    if: github.event_name == 'push' && github.ref == 'refs/heads/preview'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      deployments: write
+    steps:
+      - name: Check out validated source
+        uses: actions/checkout@v6
+
+      - name: Deploy preview branch to Cloudflare Pages
+        uses: cloudflare/wrangler-action@v4
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: pages deploy ./public --project-name=godstatic-game-preview --branch=preview
+          gitHubToken: ${{ secrets.GITHUB_TOKEN }}
+
+  test-protected-preview:
+    name: Test protected preview with Access service token
+    needs: deploy-preview
+    if: github.event_name == 'push' && github.ref == 'refs/heads/preview'
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Confirm anonymous requests are blocked
+        env:
+          PREVIEW_URL: https://game-preview.godstatic.com
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 12); do
+            status="$(curl --silent --show-error --max-time 20 \
+              --output /dev/null --write-out '%{http_code}' \
+              "$PREVIEW_URL/")" || status="000"
+            case "$status" in
+              302|401|403) echo "PASS: anonymous request blocked by Access (HTTP $status)."; exit 0 ;;
+              200) echo "ERROR: preview returned HTTP 200 without Access credentials." >&2; exit 1 ;;
+              *) echo "Waiting for preview (attempt $attempt/12; HTTP $status)…"; sleep 5 ;;
+            esac
+          done
+          echo "ERROR: preview never returned an Access block (last HTTP $status)." >&2
+          exit 1
+
+      - name: Verify service token can read the deployed game
+        env:
+          PREVIEW_URL: https://game-preview.godstatic.com
+          CF_ACCESS_CLIENT_ID: ${{ secrets.CF_ACCESS_CLIENT_ID }}
+          CF_ACCESS_CLIENT_SECRET: ${{ secrets.CF_ACCESS_CLIENT_SECRET }}
+          DEPLOY_COMMIT: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          : "${CF_ACCESS_CLIENT_ID:?Add CF_ACCESS_CLIENT_ID to GitHub Actions secrets}"
+          : "${CF_ACCESS_CLIENT_SECRET:?Add CF_ACCESS_CLIENT_SECRET to GitHub Actions secrets}"
+          body_file="$(mktemp)"
+          trap 'rm -f "$body_file"' EXIT
+          status="000"
+          for attempt in $(seq 1 12); do
+            status="$(curl --silent --show-error --max-time 20 \
+              --output "$body_file" --write-out '%{http_code}' \
+              --header "CF-Access-Client-Id: $CF_ACCESS_CLIENT_ID" \
+              --header "CF-Access-Client-Secret: $CF_ACCESS_CLIENT_SECRET" \
+              "$PREVIEW_URL/?ci=$DEPLOY_COMMIT")" || status="000"
+            if [[ "$status" == "200" ]]; then break; fi
+            echo "Waiting for protected preview (attempt $attempt/12; HTTP $status)…"; sleep 5 ;;
+          done
+          if [[ "$status" != "200" ]]; then
+            echo "ERROR: service-token request did not return HTTP 200 (last status $status)." >&2
+            exit 1
+          fi
+          if ! grep -qi '<html' "$body_file"; then
+            echo "ERROR: authenticated response was not the game HTML." >&2
+            exit 1
+          fi
+          echo "PASS: Access service token authenticated and the game HTML was returned."
