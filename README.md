@@ -157,3 +157,5 @@ PAGES_DEV_PORT=8790 npm run validate
 ## What the checks do not do
 
 The prototype and validation are self-contained and do not contact or modify the existing GODstatic website or its connectors. The local check makes no Cloudflare deployment. Only the GitHub workflow's preview job and the explicit manual deployment command upload files, and both target the separately named `godstatic-game-preview` Pages project.
+
+<!-- ci: preview deploy test trigger, 2026-11-02 -->
